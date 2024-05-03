@@ -78,6 +78,28 @@ it('can ignore a subscriber', function () {
     expect($response->getBody()->getContents())->toBe('{}');
 });
 
+it('does not fail when ignoring an invalid subscriber', function () {
+    $connection = connect();
+    subscribe('test-channel-two', connection: $connection);
+    $response = await($this->signedPostRequest('events', [
+        'name' => 'NewEvent',
+        'channels' => ['test-channel-one', 'test-channel-two'],
+        'data' => json_encode(['some' => 'data']),
+    ]));
+
+    $response = await($this->signedPostRequest('events', [
+        'name' => 'NewEvent',
+        'channels' => ['test-channel-one', 'test-channel-two'],
+        'data' => json_encode(['some' => ['more' => 'data']]),
+        'socket_id' => 'invalid-socket-id',
+    ]));
+
+    $connection->assertReceived('{"event":"NewEvent","data":"{\"some\":\"data\"}","channel":"test-channel-two"}', 1);
+    $connection->assertReceived('{"event":"NewEvent","data":"{\"some\":{\"more\":\"data\"}}","channel":"test-channel-two"}', 1);
+    expect($response->getStatusCode())->toBe(200);
+    expect($response->getBody()->getContents())->toBe('{}');
+});
+
 it('validates invalid data', function ($payload) {
     await($this->signedPostRequest('events', $payload));
 })
@@ -164,4 +186,24 @@ it('can trigger an event within the max message size', function () {
 
     expect($response->getStatusCode())->toBe(200);
     expect($response->getBody()->getContents())->toBe('{}');
+});
+
+it('fails when payload is invalid', function () {
+    $response = await($this->signedPostRequest('events', null));
+
+    expect($response->getStatusCode())->toBe(500);
+})->throws(ResponseException::class, exceptionCode: 500);
+
+it('fails when app cannot be found', function () {
+    await($this->signedPostRequest('events', appId: 'invalid-app-id'));
+})->throws(ResponseException::class, exceptionCode: 404);
+
+it('can send the content-length header', function () {
+    $response = await($this->signedPostRequest('events', [
+        'name' => 'NewEvent',
+        'channel' => 'test-channel',
+        'data' => json_encode(['some' => 'data']),
+    ]));
+
+    expect($response->getHeader('Content-Length'))->toBe(['2']);
 });

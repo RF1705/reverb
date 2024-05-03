@@ -47,18 +47,13 @@ class Factory
         $loop = $loop ?: Loop::get();
 
         $router = match ($protocol) {
-            'pusher' => static::makePusherServer(),
+            'pusher' => static::makePusherRouter(),
             default => throw new InvalidArgumentException("Unsupported protocol [{$protocol}]."),
         };
 
-        if (empty($options['tls']) && $hostname && Certificate::exists($hostname)) {
-            [$certificate, $key] = Certificate::resolve($hostname);
+        $options['tls'] = static::configureTls($options['tls'] ?? [], $hostname);
 
-            $options['tls']['local_cert'] = $certificate;
-            $options['tls']['local_pk'] = $key;
-        }
-
-        $uri = empty($options['tls']) ? "{$host}:{$port}" : "tls://{$host}:{$port}";
+        $uri = static::usesTls($options['tls']) ? "tls://{$host}:{$port}" : "{$host}:{$port}";
 
         return new HttpServer(
             new SocketServer($uri, $options, $loop),
@@ -71,7 +66,7 @@ class Factory
     /**
      * Create a new WebSocket server for the Pusher protocol.
      */
-    public static function makePusherServer(): Router
+    public static function makePusherRouter(): Router
     {
         app()->singleton(
             ChannelManager::class,
@@ -108,5 +103,36 @@ class Factory
         $routes->add('users_terminate', Route::post('/apps/{appId}/users/{userId}/terminate_connections', new UsersTerminateController));
 
         return $routes;
+    }
+
+    /**
+     * Configure the TLS context for the server.
+     *
+     * @param  array  $context<string,  mixed>
+     * @return array<string, mixed>
+     */
+    protected static function configureTls(array $context, ?string $hostname): array
+    {
+        $context = array_filter($context, fn ($value) => $value !== null);
+
+        if (! static::usesTls($context) && $hostname && Certificate::exists($hostname)) {
+            [$certificate, $key] = Certificate::resolve($hostname);
+
+            $context['local_cert'] = $certificate;
+            $context['local_pk'] = $key;
+            $context['verify_peer'] = app()->environment() === 'production';
+        }
+
+        return $context;
+    }
+
+    /**
+     * Determine whether the server uses TLS.
+     *
+     * @param  array  $context<string,  mixed>
+     */
+    protected static function usesTls(array $context): bool
+    {
+        return ($context['local_cert'] ?? false) || ($context['local_pk'] ?? false);
     }
 }

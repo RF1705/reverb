@@ -6,9 +6,11 @@ use Illuminate\Console\Command;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
+use Symfony\Component\Console\Attribute\AsCommand;
 
 use function Laravel\Prompts\confirm;
 
+#[AsCommand(name: 'reverb:install')]
 class InstallCommand extends Command
 {
     /**
@@ -30,7 +32,7 @@ class InstallCommand extends Command
      */
     public function handle(): void
     {
-        $this->addEnviromentVariables();
+        $this->addEnvironmentVariables();
         $this->publishConfiguration();
         $this->updateBroadcastingConfiguration();
         $this->enableBroadcasting();
@@ -42,7 +44,7 @@ class InstallCommand extends Command
     /**
      * Add the Reverb variables to the environment file.
      */
-    protected function addEnviromentVariables(): void
+    protected function addEnvironmentVariables(): void
     {
         if (File::missing($env = app()->environmentFile())) {
             return;

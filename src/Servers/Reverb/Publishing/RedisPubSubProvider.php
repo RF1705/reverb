@@ -2,6 +2,8 @@
 
 namespace Laravel\Reverb\Servers\Reverb\Publishing;
 
+use Illuminate\Support\Arr;
+use Illuminate\Support\ConfigurationUrlParser;
 use Illuminate\Support\Facades\Config;
 use Laravel\Reverb\Servers\Reverb\Contracts\PubSubIncomingMessageHandler;
 use Laravel\Reverb\Servers\Reverb\Contracts\PubSubProvider;
@@ -18,7 +20,8 @@ class RedisPubSubProvider implements PubSubProvider
     public function __construct(
         protected RedisClientFactory $clientFactory,
         protected PubSubIncomingMessageHandler $messageHandler,
-        protected string $channel
+        protected string $channel,
+        protected array $server = []
     ) {
         //
     }
@@ -61,7 +64,7 @@ class RedisPubSubProvider implements PubSubProvider
     public function on(string $event, callable $callback): void
     {
         $this->subscribingClient->on('message', function (string $channel, string $payload) use ($event, $callback) {
-            $payload = json_decode($payload, true);
+            $payload = json_decode($payload, associative: true, flags: JSON_THROW_ON_ERROR);
 
             if (($payload['type'] ?? null) === $event) {
                 $callback($payload);
@@ -84,25 +87,42 @@ class RedisPubSubProvider implements PubSubProvider
      */
     protected function redisUrl(): string
     {
-        $config = Config::get('database.redis.default');
+        $config = empty($this->server) ? Config::get('database.redis.default') : $this->server;
 
-        [$host, $port, $query] = [
-            $config['host'],
-            $config['port'] ?: 6379,
+        $parsed = (new ConfigurationUrlParser)->parseConfiguration($config);
+
+        $driver = strtolower($parsed['driver'] ?? '');
+
+        if (in_array($driver, ['tcp', 'tls'])) {
+            $parsed['scheme'] = $driver;
+        }
+
+        if (in_array($driver, ['tcp', 'tls'])) {
+            $parsed['scheme'] = $driver;
+        }
+
+        [$host, $port, $protocol, $query] = [
+            $parsed['host'],
+            $parsed['port'] ?: 6379,
+            Arr::get($parsed, 'scheme') === 'tls' ? 's' : '',
             [],
         ];
 
-        if ($config['password']) {
-            $query['password'] = $config['password'];
+        if ($parsed['username'] ?? false) {
+            $query['username'] = $parsed['username'];
         }
 
-        if ($config['database']) {
-            $query['db'] = $config['database'];
+        if ($parsed['password'] ?? false) {
+            $query['password'] = $parsed['password'];
+        }
+
+        if ($parsed['database'] ?? false) {
+            $query['db'] = $parsed['database'];
         }
 
         $query = http_build_query($query);
 
-        return "redis://{$host}:{$port}".($query ? "?{$query}" : '');
+        return "redis{$protocol}://{$host}:{$port}".($query ? "?{$query}" : '');
     }
 
     /**

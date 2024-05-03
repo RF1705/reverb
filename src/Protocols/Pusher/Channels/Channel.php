@@ -3,6 +3,7 @@
 namespace Laravel\Reverb\Protocols\Pusher\Channels;
 
 use Laravel\Reverb\Contracts\Connection;
+use Laravel\Reverb\Loggers\Log;
 use Laravel\Reverb\Events\SubscribedToChannel;
 use Laravel\Reverb\Events\UnsubscribedFromChannel;
 use Laravel\Reverb\Protocols\Pusher\Concerns\SerializesChannels;
@@ -67,7 +68,7 @@ class Channel
      */
     public function subscribe(Connection $connection, ?string $auth = null, ?string $data = null): void
     {
-        $this->connections->add($connection, $data ? json_decode($data, true) : []);
+        $this->connections->add($connection, $data ? json_decode($data, associative: true, flags: JSON_THROW_ON_ERROR) : []);
 
         SubscribedToChannel::dispatch($connection, $this->name(), $auth);
     }
@@ -107,6 +108,9 @@ class Channel
 
         $message = json_encode($payload);
 
+        Log::info('Broadcasting To', $this->name());
+        Log::message($message);
+
         foreach ($this->connections() as $connection) {
             if ($except->id() === $connection->id()) {
                 continue;
@@ -122,6 +126,9 @@ class Channel
     public function broadcastToAll(array $payload): void
     {
         $message = json_encode($payload);
+
+        Log::info('Broadcasting To', $this->name());
+        Log::message($message);
 
         foreach ($this->connections() as $connection) {
             $connection->send($message);

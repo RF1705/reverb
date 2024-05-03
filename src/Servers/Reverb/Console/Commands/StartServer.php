@@ -19,8 +19,10 @@ use Laravel\Reverb\Servers\Reverb\Factory as ServerFactory;
 use Laravel\Reverb\Servers\Reverb\Http\Server;
 use React\EventLoop\Loop;
 use React\EventLoop\LoopInterface;
+use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\SignalableCommandInterface;
 
+#[AsCommand(name: 'reverb:start')]
 class StartServer extends Command implements SignalableCommandInterface
 {
     /**
@@ -67,6 +69,7 @@ class StartServer extends Command implements SignalableCommandInterface
         $this->ensureStaleConnectionsAreCleaned($loop);
         $this->ensureRestartCommandIsRespected($server, $loop, $host, $port);
         $this->ensurePulseEventsAreCollected($loop, $config['pulse_ingest_interval']);
+        $this->ensureTelescopeEntriesAreCollected($loop, $config['telescope_ingest_interval'] ?? 15);
 
         $this->components->info('Starting '.($server->isSecure() ? 'secure ' : '')."server on {$host}:{$port}".(($hostname && $hostname !== $host) ? " ({$hostname})" : ''));
 
@@ -146,6 +149,20 @@ class StartServer extends Command implements SignalableCommandInterface
 
         $loop->addPeriodicTimer($interval, function () {
             $this->laravel->make(\Laravel\Pulse\Pulse::class)->ingest();
+        });
+    }
+
+    /**
+     * Schedule Telescope to store entries if enabled.
+     */
+    protected function ensureTelescopeEntriesAreCollected(LoopInterface $loop, int $interval): void
+    {
+        if (! $this->laravel->bound(\Laravel\Telescope\Contracts\EntriesRepository::class)) {
+            return;
+        }
+
+        $loop->addPeriodicTimer($interval, function () {
+            \Laravel\Telescope\Telescope::store($this->laravel->make(\Laravel\Telescope\Contracts\EntriesRepository::class));
         });
     }
 

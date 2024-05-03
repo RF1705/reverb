@@ -9,10 +9,9 @@ use Laravel\Reverb\Protocols\Pusher\Concerns\InteractsWithChannelInformation;
 use Laravel\Reverb\Protocols\Pusher\EventDispatcher;
 use Laravel\Reverb\Protocols\Pusher\MetricsHandler;
 use Laravel\Reverb\Servers\Reverb\Http\Connection;
+use Laravel\Reverb\Servers\Reverb\Http\Response;
 use Psr\Http\Message\RequestInterface;
 use React\Promise\PromiseInterface;
-use Symfony\Component\HttpFoundation\JsonResponse;
-use Symfony\Component\HttpFoundation\Response;
 
 class EventsController extends Controller
 {
@@ -25,15 +24,18 @@ class EventsController extends Controller
     {
         $this->verify($request, $connection, $appId);
 
-        $payload = json_decode($this->body, true);
+        $payload = json_decode($this->body, associative: true, flags: JSON_THROW_ON_ERROR);
 
         $validator = $this->validator($payload);
 
         if ($validator->fails()) {
-            return new JsonResponse($validator->errors(), 422);
+            return new Response($validator->errors(), 422);
         }
 
         $channels = Arr::wrap($payload['channels'] ?? $payload['channel'] ?? []);
+        if ($except = $payload['socket_id'] ?? null) {
+            $except = $this->channels->connections()[$except] ?? null;
+        }
 
         EventDispatcher::dispatch(
             $this->application,
@@ -42,16 +44,16 @@ class EventsController extends Controller
                 'channels' => $channels,
                 'data' => $payload['data'],
             ],
-            isset($payload['socket_id']) ? $this->channels->connections()[$payload['socket_id']]->connection() : null
+            $except ? $except->connection() : null
         );
 
         if (isset($payload['info'])) {
             return app(MetricsHandler::class)
                 ->gather($this->application, 'channels', ['info' => $payload['info'], 'channels' => $channels])
-                ->then(fn ($channels) => new JsonResponse(['channels' => array_map(fn ($channel) => (object) $channel, $channels)]));
+                ->then(fn ($channels) => new Response(['channels' => array_map(fn ($channel) => (object) $channel, $channels)]));
         }
 
-        return new JsonResponse((object) []);
+        return new Response((object) []);
     }
 
     /**

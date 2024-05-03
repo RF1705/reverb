@@ -8,10 +8,9 @@ use Laravel\Reverb\Protocols\Pusher\Concerns\InteractsWithChannelInformation;
 use Laravel\Reverb\Protocols\Pusher\EventDispatcher;
 use Laravel\Reverb\Protocols\Pusher\MetricsHandler;
 use Laravel\Reverb\Servers\Reverb\Http\Connection;
+use Laravel\Reverb\Servers\Reverb\Http\Response;
 use Psr\Http\Message\RequestInterface;
 use React\Promise\PromiseInterface;
-use Symfony\Component\HttpFoundation\JsonResponse;
-use Symfony\Component\HttpFoundation\Response;
 
 use function React\Promise\all;
 
@@ -26,12 +25,12 @@ class EventsBatchController extends Controller
     {
         $this->verify($request, $connection, $appId);
 
-        $payload = json_decode($this->body, true);
+        $payload = json_decode($this->body, associative: true, flags: JSON_THROW_ON_ERROR);
 
         $validator = $this->validator($payload);
 
         if ($validator->fails()) {
-            return new JsonResponse($validator->errors(), 422);
+            return new Response($validator->errors(), 422);
         }
 
         $items = collect($payload['batch']);
@@ -56,11 +55,11 @@ class EventsBatchController extends Controller
 
         if ($items->contains(fn ($item) => ! empty($item))) {
             return all($items)->then(function ($items) {
-                return new JsonResponse(['batch' => array_map(fn ($item) => (object) $item, $items)]);
+                return new Response(['batch' => array_map(fn ($item) => (object) $item, $items)]);
             });
         }
 
-        return new JsonResponse(['batch' => (object) []]);
+        return new Response(['batch' => (object) []]);
     }
 
     /**
